@@ -1,4 +1,4 @@
-# MyGuard Proxy API
+# MyGuard Proxy
 
 Цей бекенд працює як проксі до OpenAI API для розширення myGuard Privacy Extension.
 

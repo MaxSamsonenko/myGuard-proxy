@@ -1,42 +1,67 @@
-import fetch from "node-fetch";
+import OpenAI from "openai";
+
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+const UA_LEVEL = {
+	high: "Високий",
+	medium: "Середній",
+	low: "Низький",
+};
 
 export default async function handler(req, res) {
-	res.setHeader("Access-Control-Allow-Origin", "*");
-	res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-	res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-
-	if (req.method === "OPTIONS") {
-		return res.status(200).end();
+	if (req.method !== "POST") {
+		res.status(405).json({ error: "Method not allowed" });
+		return;
 	}
 
 	try {
-		const { message, category, url } = req.body;
+		const { message, category, level = "medium", url } = req.body || {};
 
-		if (!message) {
-			return res.status(400).json({ error: "Message is required" });
+		if (!message || !category) {
+			res
+				.status(400)
+				.json({ error: "Missing required fields: message, category" });
+			return;
 		}
 
-		const prompt = `Поясни цю загрозу простою мовою. Категорія: ${category}, URL: ${url}, Повідомлення: ${message}`;
+		const uiLevel = UA_LEVEL[level] || "Середній";
 
-		const aiResp = await fetch("https://api.openai.com/v1/chat/completions", {
-			method: "POST",
-			headers: {
-				Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify({
-				model: "gpt-4o-mini",
-				messages: [{ role: "user", content: prompt }],
-				temperature: 0.3,
-			}),
+		const system =
+			"Ти — лаконічний асистент з кібербезпеки для браузерного розширення. " +
+			"Пояснюй коротко (до 120–160 слів), простою мовою, без води.";
+
+		const user =
+			`Сформулюй пояснення для користувача щодо знайденої загрози.\n` +
+			`Категорія: ${category}\n` +
+			(url ? `Сторінка: ${url}\n` : "") +
+			`Опис загрози: "${message}"\n\n` +
+			`Обов'язково додай окремий рядок: "Чому рівень \"${uiLevel}\": …" ` +
+			`(поясни саме причину присвоєння цього рівня). ` +
+			`Наприкінці додай 2–3 дуже короткі поради, що робити користувачу.`;
+
+		const completion = await client.chat.completions.create({
+			model: "gpt-4o-mini",
+			temperature: 0.4,
+			max_tokens: 220,
+			messages: [
+				{ role: "system", content: system },
+				{ role: "user", content: user },
+			],
 		});
 
-		const data = await aiResp.json();
-		const explanation = data.choices?.[0]?.message?.content ?? "";
+		const text = (completion?.choices?.[0]?.message?.content || "").trim();
+		if (!text) {
+			res.status(502).json({ error: "Empty AI response" });
+			return;
+		}
 
-		res.status(200).json({ explanation });
-	} catch (err) {
-		console.error(err);
-		res.status(500).json({ error: "Server error" });
+		res.setHeader(
+			"Cache-Control",
+			"s-maxage=900, stale-while-revalidate=86400"
+		);
+		res.json({ text });
+	} catch (e) {
+		console.error("[/api/explain] error:", e);
+		res.status(500).json({ error: "AI proxy error" });
 	}
 }
