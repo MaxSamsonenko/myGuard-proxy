@@ -1,55 +1,70 @@
-import OpenAI from "openai";
+// api/explain.js — без сторонніх залежностей
+const UA_LEVEL = { high: "Високий", medium: "Середній", low: "Низький" };
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-const UA_LEVEL = {
-	high: "Високий",
-	medium: "Середній",
-	low: "Низький",
-};
+function setCors(res) {
+	res.setHeader("Access-Control-Allow-Origin", "*");
+	res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+	res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+}
 
 export default async function handler(req, res) {
+	if (req.method === "OPTIONS") {
+		setCors(res);
+		res.status(204).end();
+		return;
+	}
 	if (req.method !== "POST") {
+		setCors(res);
 		res.status(405).json({ error: "Method not allowed" });
 		return;
 	}
 
 	try {
 		const { message, category, level = "medium", url } = req.body || {};
-
 		if (!message || !category) {
-			res
-				.status(400)
-				.json({ error: "Missing required fields: message, category" });
+			setCors(res);
+			res.status(400).json({ error: "Missing fields: message, category" });
 			return;
 		}
 
 		const uiLevel = UA_LEVEL[level] || "Середній";
-
 		const system =
 			"Ти — лаконічний асистент з кібербезпеки для браузерного розширення. " +
-			"Пояснюй коротко (до 120–160 слів), простою мовою, без води.";
-
+			"Пояснюй коротко (120–160 слів), простою мовою.";
 		const user =
-			`Сформулюй пояснення для користувача щодо знайденої загрози.\n` +
-			`Категорія: ${category}\n` +
+			`Сформулюй пояснення щодо загрози.\nКатегорія: ${category}\n` +
 			(url ? `Сторінка: ${url}\n` : "") +
-			`Опис загрози: "${message}"\n\n` +
-			`Обов'язково додай окремий рядок: "Чому рівень \"${uiLevel}\": …" ` +
-			`(поясни саме причину присвоєння цього рівня). ` +
-			`Наприкінці додай 2–3 дуже короткі поради, що робити користувачу.`;
+			`Опис: "${message}"\n\n` +
+			`Обов'язково додай рядок: "Чому рівень \"${uiLevel}\": …". ` +
+			`Наприкінці 2–3 дуже короткі поради.`;
 
-		const completion = await client.chat.completions.create({
-			model: "gpt-4o-mini",
-			temperature: 0.4,
-			max_tokens: 220,
-			messages: [
-				{ role: "system", content: system },
-				{ role: "user", content: user },
-			],
+		const r = await fetch("https://api.openai.com/v1/chat/completions", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+			},
+			body: JSON.stringify({
+				model: "gpt-4o-mini",
+				temperature: 0.4,
+				max_tokens: 220,
+				messages: [
+					{ role: "system", content: system },
+					{ role: "user", content: user },
+				],
+			}),
 		});
 
-		const text = (completion?.choices?.[0]?.message?.content || "").trim();
+		const data = await r.json();
+		if (!r.ok) {
+			console.error("OpenAI error:", data);
+			setCors(res);
+			res.status(502).json({ error: "OpenAI error", detail: data });
+			return;
+		}
+
+		const text = (data?.choices?.[0]?.message?.content || "").trim();
+		setCors(res);
 		if (!text) {
 			res.status(502).json({ error: "Empty AI response" });
 			return;
@@ -62,6 +77,7 @@ export default async function handler(req, res) {
 		res.json({ text });
 	} catch (e) {
 		console.error("[/api/explain] error:", e);
-		res.status(500).json({ error: "AI proxy error" });
+		setCors(res);
+		res.status(500).json({ error: "AI proxy error", detail: String(e) });
 	}
 }
