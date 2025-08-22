@@ -1,4 +1,3 @@
-// api/explain.js — без сторонніх залежностей
 const UA_LEVEL = { high: "Високий", medium: "Середній", low: "Низький" };
 
 function setCors(res) {
@@ -37,10 +36,10 @@ export default async function handler(req, res) {
 
 		const system =
 			"Ти — лаконічний асистент з кібербезпеки для браузерного розширення. " +
-			"Пояснюй коротко (120–160 слів), простою мовою.\n" +
+			"Пояснюй коротко (120–160 слів), простою мовою, думка має бути закінченою.\n" +
 			"Ніколи не звинувачуй розширення — воно лише ВИЯВЛЯЄ активність. " +
 			"Описуй дію САЙТУ/СКРИПТІВ (наприклад: «на сторінці виявлено глобальне прослуховування клавіш»). " +
-			`Додай рядок: "Чому рівень «${uiLevel}»: …". Пиши українською, без зайвої технічки.`;
+			`Додай рядок: "Чому рівень «${uiLevel}»: …". Пиши українською, без зайвої інформації та технічки.`;
 
 		const user =
 			`Сформулюй пояснення щодо загрози.\nКатегорія: ${category}\n` +
@@ -49,7 +48,6 @@ export default async function handler(req, res) {
 			`Обов'язково додай рядок: "Чому рівень \"${uiLevel}\": …". ` +
 			`Наприкінці дай 2–3 дуже короткі поради.`;
 
-		// Таймаут на запит до OpenAI
 		const ctrl = new AbortController();
 		const id = setTimeout(() => ctrl.abort(), 12000);
 
@@ -86,7 +84,6 @@ export default async function handler(req, res) {
 			return;
 		}
 
-		// Легка санітизація формулювань
 		text = text
 			.replace(/\bрозширенн(я|і|ю)\b/gi, "сайт")
 			.replace(/\bextension\b/gi, "сайт");
@@ -96,7 +93,6 @@ export default async function handler(req, res) {
 			"Cache-Control",
 			"s-maxage=900, stale-while-revalidate=86400"
 		);
-		// ВАЖЛИВО: клієнт має читати data.text (або зробити fallback на data.explanation)
 		res.json({ text });
 	} catch (e) {
 		console.error("[/api/explain] error:", e);
